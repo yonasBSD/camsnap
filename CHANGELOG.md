@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.2.2 - Unreleased
+- Homebrew: install target-specific release binaries on macOS and Linux.
 
 ## 0.2.1
 - Add Docker support with multi-arch GHCR publishing.
