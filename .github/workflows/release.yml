@@ -103,10 +103,35 @@ jobs:
             exit 1
           fi
 
-          gh run watch "$run_id" \
-            --repo steipete/homebrew-tap \
-            --exit-status \
-            --interval 10
+          api_failures=0
+          while true; do
+            if ! run_result=$(gh api \
+              "repos/steipete/homebrew-tap/actions/runs/$run_id" \
+              --jq '.status + "\t" + (.conclusion // "")' 2>&1); then
+              api_failures=$((api_failures + 1))
+              if [ "$api_failures" -ge 6 ]; then
+                echo "::error::Could not read tap workflow run $run_id after $api_failures attempts"
+                printf '%s\n' "$run_result" >&2
+                exit 1
+              fi
+
+              sleep 10
+              continue
+            fi
+            api_failures=0
+
+            case "$run_result" in
+              completed$'\t'success)
+                exit 0
+                ;;
+              completed$'\t'*)
+                echo "::error::Tap workflow run $run_id finished with: ${run_result#*$'\t'}"
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
 
   docker:
     runs-on: ubuntu-latest
