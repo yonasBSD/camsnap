@@ -25,30 +25,19 @@ git tag vX.Y.Z
 git push origin main --tags
 ```
 
-## 4) Update the Homebrew tap formula
-In the tap repo (assumed sibling at `../homebrew-tap`), update `Formula/camsnap.rb`:
-
-1. Set `version "X.Y.Z"`.
-2. Point `url` to the new tag source tarball, e.g.:
-   ```
-   url "https://github.com/steipete/camsnap/archive/refs/tags/vX.Y.Z.tar.gz"
-   ```
-3. Update `sha256` for that tarball:
-   ```sh
-   curl -L -o /tmp/camsnap.tar.gz https://github.com/steipete/camsnap/archive/refs/tags/vX.Y.Z.tar.gz
-   shasum -a 256 /tmp/camsnap.tar.gz
-   ```
-   Paste the hash into the formula.
-4. Ensure `depends_on "go" => :build` is present and build step uses:
-   ```ruby
-   system "go", "build", *std_go_args(ldflags: "-s -w"), "./cmd/camsnap"
-   ```
-
-Commit and push in the tap repo:
+## 4) Verify the Homebrew tap formula
+The release workflow dispatches `update-formula.yml` in `steipete/homebrew-tap` with:
 ```sh
-git commit -am "camsnap vX.Y.Z"
-git push origin main
+artifact_template='{formula}_{version}_{target}.tar.gz'
 ```
+
+Confirm the workflow succeeds and `Formula/camsnap.rb` contains matching URLs and checksums for:
+- `darwin_amd64`
+- `darwin_arm64`
+- `linux_amd64`
+- `linux_arm64`
+
+If the automatic dispatch fails, rerun `update-formula.yml` with `formula=camsnap`, `tag=vX.Y.Z`, `repository=steipete/camsnap`, and the artifact template above.
 
 ## 5) Sanity-check install from tap
 ```sh
@@ -65,5 +54,5 @@ camsnap --version
 - Optionally post in team channel with upgrade command: `brew update && brew upgrade steipete/tap/camsnap`.
 
 ## Notes
-- Release automation updates the tap from the GoReleaser macOS arm64 asset: `camsnap_X.Y.Z_darwin_arm64.tar.gz`.
+- Release automation updates the tap from the matching GoReleaser asset for each supported macOS and Linux architecture.
 - Keep the tap formula small: version, url, sha256, license, dependencies.

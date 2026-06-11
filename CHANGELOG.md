@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.2 - Unreleased
+## 0.2.2
 - Homebrew: install target-specific release binaries on macOS and Linux.
 
 ## 0.2.1
