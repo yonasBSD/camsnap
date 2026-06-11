@@ -17,6 +17,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  RELEASE_INPUT_TAG: ${{ inputs.tag }}
 
 jobs:
   goreleaser:
@@ -33,14 +34,82 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check existing release assets
+        id: existing-release
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$RELEASE_INPUT_TAG"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid release tag: $tag"
+            exit 1
+          fi
+          version="${tag#v}"
+
+          release_json=""
+          for attempt in {1..6}; do
+            if release_json=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/releases/tags/$tag" 2>&1); then
+              break
+            fi
+            if grep -Fq "(HTTP 404)" <<< "$release_json"; then
+              echo "complete=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "::error::Could not inspect existing release $tag"
+              printf '%s\n' "$release_json" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          if ! jq -e '.draft == false and .published_at != null' <<< "$release_json" >/dev/null; then
+            echo "::error::Existing release $tag is not published"
+            exit 1
+          fi
+
+          assets=$(jq -r '
+            .assets[]
+            | select(.state == "uploaded" and (.size // 0) > 0)
+            | .name
+          ' <<< "$release_json")
+
+          expected=(
+            "camsnap_${version}_darwin_amd64.tar.gz"
+            "camsnap_${version}_darwin_arm64.tar.gz"
+            "camsnap_${version}_linux_amd64.tar.gz"
+            "camsnap_${version}_linux_arm64.tar.gz"
+            "camsnap_${version}_windows_amd64.zip"
+            "camsnap_${version}_windows_arm64.zip"
+            "checksums.txt"
+          )
+          missing=()
+          for asset in "${expected[@]}"; do
+            if ! grep -Fxq "$asset" <<< "$assets"; then
+              missing+=("$asset")
+            fi
+          done
+
+          if [ "${#missing[@]}" -ne 0 ]; then
+            for asset in "${missing[@]}"; do
+              echo "::error::Existing release $tag is missing asset: $asset"
+            done
+            exit 1
+          fi
+
+          echo "complete=true" >> "$GITHUB_OUTPUT"
+
       - name: Stash GoReleaser config
         run: cp .goreleaser.yaml /tmp/.goreleaser.yaml
 
       - name: Checkout release tag
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: git checkout ${{ inputs.tag }}
+        run: git checkout "$RELEASE_INPUT_TAG"
 
       - name: GoReleaser
+        if: ${{ steps.existing-release.outputs.complete != 'true' }}
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
@@ -56,7 +125,11 @@ jobs:
       - name: Resolve release tag
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "RELEASE_TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
+            if [[ ! "$RELEASE_INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Invalid release tag: $RELEASE_INPUT_TAG"
+              exit 1
+            fi
+            echo "RELEASE_TAG=$RELEASE_INPUT_TAG" >> "$GITHUB_ENV"
           else
             echo "RELEASE_TAG=${{ github.ref_name }}" >> "$GITHUB_ENV"
           fi
@@ -142,13 +215,18 @@ jobs:
 
       - name: Checkout release tag
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: git checkout ${{ inputs.tag }}
+        run: |
+          if [[ ! "$RELEASE_INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid release tag: $RELEASE_INPUT_TAG"
+            exit 1
+          fi
+          git checkout "$RELEASE_INPUT_TAG"
 
       - name: Resolve Docker tags
         id: docker-tags
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            release_tag="${{ inputs.tag }}"
+            release_tag="$RELEASE_INPUT_TAG"
           else
             release_tag="${{ github.ref_name }}"
           fi
