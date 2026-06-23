@@ -102,7 +102,7 @@ func probeRTSP(_ *cobra.Command, url string, timeout time.Duration, authMode, tr
 	}
 
 	for attempt := 0; attempt < 3; attempt++ {
-	ctx, cancel := mediaexec.WithTimeout(context.Background(), timeout)
+		ctx, cancel := mediaexec.WithTimeout(context.Background(), timeout)
 		args := []string{
 			"-hide_banner",
 			"-loglevel", "error",
